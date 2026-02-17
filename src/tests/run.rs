@@ -470,6 +470,43 @@ fn replay_with_completion() {
 }
 
 #[test]
+fn replay_with_completion_without_do_progress() {
+    let mut output = VMTestCase::new()
+        .input(start_message(3))
+        .input(input_entry_message(b"my-data"))
+        .input(RunCommandMessage {
+            result_completion_id: 1,
+            name: "my-side-effect".to_owned(),
+        })
+        .input(RunCompletionNotificationMessage {
+            completion_id: 1,
+            result: Some(run_completion_notification_message::Result::Value(
+                Bytes::from_static(b"123").into(),
+            )),
+        })
+        .run(|vm| {
+            vm.sys_input().unwrap();
+
+            let handle = vm.sys_run("my-side-effect".to_owned()).unwrap();
+
+            // Replay should surface already-journaled run completion immediately.
+            let result = vm.take_notification(handle).unwrap().unwrap();
+            let_assert!(Value::Success(s) = result);
+
+            vm.sys_write_output(NonEmptyValue::Success(s), PayloadOptions::default())
+                .unwrap();
+            vm.sys_end().unwrap();
+        });
+
+    assert_that!(
+        output.next_decoded::<OutputCommandMessage>().unwrap(),
+        is_output_with_success(b"123")
+    );
+    output.next_decoded::<EndMessage>().unwrap();
+    assert_eq!(output.next(), None);
+}
+
+#[test]
 fn enter_then_notify_error() {
     let mut output = VMTestCase::new()
         .input(start_message(1))

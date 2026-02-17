@@ -23,7 +23,7 @@ use crate::{
     PayloadOptions, RetryPolicy, RunExitResult,
 };
 use bytes::Bytes;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use tracing::trace;
 
 /// Determine whether payload equality checks should be skipped.
@@ -686,6 +686,12 @@ impl TransitionAndReturn<Context, SysRun> for State {
             // we need to check whether there is a completion already,
             // otherwise enqueue it to execute it.
             if async_results.non_deterministic_find_id(&notification_id) {
+                // Make the replayed completion immediately observable via `take_notification`.
+                // This avoids requiring an explicit `do_progress` just to materialize a value
+                // that is already present in the journal.
+                let mut notification_ids = HashSet::with_capacity(1);
+                notification_ids.insert(notification_id.clone());
+                let _ = async_results.process_next_until_any_found(&notification_ids);
                 trace!(
                     "Found notification for {handle:?} with id {notification_id:?} while replaying, the run closure won't be executed."
                 );
