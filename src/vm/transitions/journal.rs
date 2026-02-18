@@ -23,7 +23,7 @@ use crate::{
     PayloadOptions, RetryPolicy, RunExitResult,
 };
 use bytes::Bytes;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use tracing::trace;
 
 /// Determine whether payload equality checks should be skipped.
@@ -666,6 +666,7 @@ impl TransitionAndReturn<Context, SysRun> for State {
         context: &mut Context,
         SysRun(name): SysRun,
     ) -> Result<(Self, Self::Output), Error> {
+        let was_replaying_on_entry = matches!(self, State::Replaying { .. });
         let result_completion_id = context.journal.next_completion_notification_id();
         let expected = RunCommandMessage {
             name: name.clone(),
@@ -681,15 +682,36 @@ impl TransitionAndReturn<Context, SysRun> for State {
 
         let notification_id = NotificationId::CompletionId(result_completion_id);
         let mut needs_execution = true;
-        if let State::Replaying { async_results, .. } = &mut s {
-            // If we're replying,
-            // we need to check whether there is a completion already,
-            // otherwise enqueue it to execute it.
-            if async_results.non_deterministic_find_id(&notification_id) {
-                trace!(
-                    "Found notification for {handle:?} with id {notification_id:?} while replaying, the run closure won't be executed."
-                );
-                needs_execution = false;
+        if was_replaying_on_entry {
+            // If we entered sys_run while replaying, the command itself is replayed
+            // even if this transition moved the state to Processing (e.g. this was
+            // the last command to replay). We still need to resolve replayed run
+            // completion notifications before deciding whether to execute the run.
+            if let State::Replaying { async_results, .. } | State::Processing { async_results, .. } =
+                &mut s
+            {
+                if async_results.non_deterministic_find_id(&notification_id) {
+                    // Make the replayed completion immediately observable via `take_notification`.
+                    // This avoids requiring an explicit `do_progress` just to materialize a value
+                    // that is already present in the journal.
+                    let mut notification_ids = HashSet::with_capacity(1);
+                    notification_ids.insert(notification_id.clone());
+                    let _ = async_results.process_next_until_any_found(&notification_ids);
+                    if matches!(s, State::Processing { .. }) {
+                        // Keep a run-state entry when replay crossed into Processing while
+                        // materializing this completion (typically the last replayed command).
+                        // This preserves existing behavior for flows that still call
+                        // `propose_run_completion` on that handle.
+                        trace!(
+                            "Found notification for {handle:?} with id {notification_id:?} while replaying; preserving run execution slot in processing state."
+                        );
+                    } else {
+                        trace!(
+                            "Found notification for {handle:?} with id {notification_id:?} while replaying, the run closure won't be executed."
+                        );
+                        needs_execution = false;
+                    }
+                }
             }
         }
         if needs_execution {
