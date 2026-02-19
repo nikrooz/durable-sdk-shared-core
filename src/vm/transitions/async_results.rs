@@ -67,7 +67,7 @@ impl TransitionAndReturn<Context, DoProgress> for State {
                 let mut known_notification_metadata = HashMap::with_capacity(2);
                 let mut known_command_metadata: Option<CommandMetadata> = None;
                 // Collect run info
-                for handle in awaiting_on {
+                for handle in &awaiting_on {
                     if let Some((command_index, name)) = run_state.get_run_info(&handle) {
                         let notification_id =
                             async_results.must_resolve_notification_handle(&handle);
@@ -102,7 +102,8 @@ impl TransitionAndReturn<Context, DoProgress> for State {
                         }
                     }
                 }
-                let mut error = Error::from(UncompletedDoProgressDuringReplay::new(
+                let mut error = Error::from(UncompletedDoProgressDuringReplay::new_with_handles(
+                    awaiting_on,
                     notification_ids,
                     known_notification_metadata,
                 ));

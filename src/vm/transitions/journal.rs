@@ -687,8 +687,8 @@ impl TransitionAndReturn<Context, SysRun> for State {
             // even if this transition moved the state to Processing (e.g. this was
             // the last command to replay). We still need to resolve replayed run
             // completion notifications before deciding whether to execute the run.
-            if let State::Replaying { async_results, .. } | State::Processing { async_results, .. } =
-                &mut s
+            if let State::Replaying { async_results, .. }
+            | State::Processing { async_results, .. } = &mut s
             {
                 if async_results.non_deterministic_find_id(&notification_id) {
                     // Make the replayed completion immediately observable via `take_notification`.

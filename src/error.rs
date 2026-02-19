@@ -73,6 +73,7 @@ pub struct Error {
     pub(crate) code: u16,
     pub(crate) message: Cow<'static, str>,
     pub(crate) kind: Option<Cow<'static, str>>,
+    pub(crate) replay_awaiting_handles: Option<Cow<'static, str>>,
     pub(crate) stacktrace: String,
     pub(crate) related_command: Option<CommandMetadata>,
     pub(crate) next_retry_delay: Option<Duration>,
@@ -100,6 +101,7 @@ impl Error {
             code: code.into(),
             message: message.into(),
             kind: None,
+            replay_awaiting_handles: None,
             stacktrace: Default::default(),
             related_command: None,
             next_retry_delay: None,
@@ -116,6 +118,10 @@ impl Error {
 
     pub fn kind(&self) -> Option<&str> {
         self.kind.as_deref()
+    }
+
+    pub fn replay_awaiting_handles(&self) -> Option<&str> {
+        self.replay_awaiting_handles.as_deref()
     }
 
     pub fn message(&self) -> &str {
@@ -138,6 +144,11 @@ impl Error {
 
     pub(crate) fn with_kind(mut self, kind: &'static str) -> Self {
         self.kind = Some(Cow::Borrowed(kind));
+        self
+    }
+
+    pub(crate) fn with_replay_awaiting_handles(mut self, handles: String) -> Self {
+        self.replay_awaiting_handles = Some(Cow::Owned(handles));
         self
     }
 

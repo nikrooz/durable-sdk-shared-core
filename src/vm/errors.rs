@@ -2,7 +2,7 @@ use crate::error::NotificationMetadata;
 use crate::fmt::{display_closed_error, format_do_progress, DiffFormatter};
 use crate::service_protocol::messages::{CommandMessageHeaderDiff, RestateMessage};
 use crate::service_protocol::{ContentTypeError, DecodingError, MessageType, NotificationId};
-use crate::{Error, Version};
+use crate::{Error, NotificationHandle, Version};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -82,6 +82,7 @@ impl Error {
             code: code.0,
             message: Cow::Borrowed(message),
             kind: None,
+            replay_awaiting_handles: None,
             stacktrace: String::new(),
             related_command: None,
             next_retry_delay: None,
@@ -237,16 +238,21 @@ impl<M: RestateMessage + CommandMessageHeaderDiff> std::error::Error for Command
 
 #[derive(Debug)]
 pub struct UncompletedDoProgressDuringReplay {
+    awaiting_handles: Vec<NotificationHandle>,
     notification_ids: Vec<NotificationId>,
     additional_known_metadata: HashMap<NotificationId, NotificationMetadata>,
 }
 
 impl UncompletedDoProgressDuringReplay {
-    pub(crate) fn new(
+    pub(crate) fn new_with_handles(
+        awaiting_handles: Vec<NotificationHandle>,
         notification_ids: HashSet<NotificationId>,
         additional_known_metadata: HashMap<NotificationId, NotificationMetadata>,
     ) -> Self {
-        // Order notifications: completions first (by id), then named signals, then unnamed signals (awakeables by id), then built-in signals last
+        let mut ordered_awaiting_handles = awaiting_handles;
+        ordered_awaiting_handles.sort();
+        ordered_awaiting_handles.dedup();
+
         let mut ordered_notification_ids = Vec::from_iter(notification_ids);
         ordered_notification_ids.sort_by(|a, b| match (a, b) {
             (NotificationId::CompletionId(a_id), NotificationId::CompletionId(b_id)) => {
@@ -275,7 +281,9 @@ impl UncompletedDoProgressDuringReplay {
                 }
             }
         });
+
         Self {
+            awaiting_handles: ordered_awaiting_handles,
             notification_ids: ordered_notification_ids,
             additional_known_metadata,
         }
@@ -358,13 +366,21 @@ trait WithInvocationErrorCode {
     fn kind(&self) -> Option<&'static str> {
         None
     }
+    fn replay_awaiting_handles(&self) -> Option<String> {
+        None
+    }
 }
 
 impl<T: WithInvocationErrorCode + fmt::Display> From<T> for Error {
     fn from(value: T) -> Self {
         let error = Error::new(value.code().0, value.to_string());
-        if let Some(kind) = value.kind() {
+        let error = if let Some(kind) = value.kind() {
             error.with_kind(kind)
+        } else {
+            error
+        };
+        if let Some(handles) = value.replay_awaiting_handles() {
+            error.with_replay_awaiting_handles(handles)
         } else {
             error
         }
@@ -401,6 +417,19 @@ impl WithInvocationErrorCode for UncompletedDoProgressDuringReplay {
 
     fn kind(&self) -> Option<&'static str> {
         Some("uncompleted_do_progress_during_replay")
+    }
+
+    fn replay_awaiting_handles(&self) -> Option<String> {
+        if self.awaiting_handles.is_empty() {
+            return None;
+        }
+        Some(
+            self.awaiting_handles
+                .iter()
+                .map(|h| u32::from(*h).to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )
     }
 }
 impl<M: RestateMessage + CommandMessageHeaderDiff> WithInvocationErrorCode

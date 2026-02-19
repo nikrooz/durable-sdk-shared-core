@@ -580,26 +580,29 @@ mod journal_mismatch {
 
     #[test]
     fn add_await_run_after_progress_was_made() {
-        let expected_error = Error::from(vm::errors::UncompletedDoProgressDuringReplay::new(
-            HashSet::from([
-                NotificationId::CompletionId(1),
-                NotificationId::SignalId(CANCEL_SIGNAL_ID),
-            ]),
-            HashMap::from([
-                (
+        let expected_error = Error::from(
+            vm::errors::UncompletedDoProgressDuringReplay::new_with_handles(
+                vec![NotificationHandle::from(1), NotificationHandle::from(17)],
+                HashSet::from([
                     NotificationId::CompletionId(1),
-                    NotificationMetadata::RelatedToCommand(CommandMetadata::new_named(
-                        "my-side-effect".to_owned(),
-                        1,
-                        MessageType::RunCommand,
-                    )),
-                ),
-                (
                     NotificationId::SignalId(CANCEL_SIGNAL_ID),
-                    NotificationMetadata::Cancellation,
-                ),
-            ]),
-        ))
+                ]),
+                HashMap::from([
+                    (
+                        NotificationId::CompletionId(1),
+                        NotificationMetadata::RelatedToCommand(CommandMetadata::new_named(
+                            "my-side-effect".to_owned(),
+                            1,
+                            MessageType::RunCommand,
+                        )),
+                    ),
+                    (
+                        NotificationId::SignalId(CANCEL_SIGNAL_ID),
+                        NotificationMetadata::Cancellation,
+                    ),
+                ]),
+            ),
+        )
         .with_related_command_metadata(CommandMetadata::new_named(
             "my-side-effect".to_owned(),
             1,
@@ -645,16 +648,19 @@ mod journal_mismatch {
 
     #[test]
     fn add_await_sleep_after_progress_was_made() {
-        let expected_error = Error::from(vm::errors::UncompletedDoProgressDuringReplay::new(
-            HashSet::from([
-                NotificationId::CompletionId(1),
-                NotificationId::SignalId(CANCEL_SIGNAL_ID),
-            ]),
-            HashMap::from([(
-                NotificationId::SignalId(CANCEL_SIGNAL_ID),
-                NotificationMetadata::Cancellation,
-            )]),
-        ));
+        let expected_error = Error::from(
+            vm::errors::UncompletedDoProgressDuringReplay::new_with_handles(
+                vec![NotificationHandle::from(1), NotificationHandle::from(17)],
+                HashSet::from([
+                    NotificationId::CompletionId(1),
+                    NotificationId::SignalId(CANCEL_SIGNAL_ID),
+                ]),
+                HashMap::from([(
+                    NotificationId::SignalId(CANCEL_SIGNAL_ID),
+                    NotificationMetadata::Cancellation,
+                )]),
+            ),
+        );
 
         let mut output = VMTestCase::new()
             .input(start_message(4))
@@ -711,22 +717,25 @@ mod journal_mismatch {
     fn add_await_awakeable_after_progress_was_made() {
         let invocation_id = Bytes::from_static(b"123");
 
-        let expected_error = Error::from(vm::errors::UncompletedDoProgressDuringReplay::new(
-            HashSet::from([
-                NotificationId::SignalId(17),
-                NotificationId::SignalId(CANCEL_SIGNAL_ID),
-            ]),
-            HashMap::from([
-                (
+        let expected_error = Error::from(
+            vm::errors::UncompletedDoProgressDuringReplay::new_with_handles(
+                vec![NotificationHandle::from(1), NotificationHandle::from(17)],
+                HashSet::from([
                     NotificationId::SignalId(17),
-                    NotificationMetadata::Awakeable(awakeable_id_str(&invocation_id, 17)),
-                ),
-                (
                     NotificationId::SignalId(CANCEL_SIGNAL_ID),
-                    NotificationMetadata::Cancellation,
-                ),
-            ]),
-        ));
+                ]),
+                HashMap::from([
+                    (
+                        NotificationId::SignalId(17),
+                        NotificationMetadata::Awakeable(awakeable_id_str(&invocation_id, 17)),
+                    ),
+                    (
+                        NotificationId::SignalId(CANCEL_SIGNAL_ID),
+                        NotificationMetadata::Cancellation,
+                    ),
+                ]),
+            ),
+        );
 
         let mut output = VMTestCase::new()
             .input(messages::StartMessage {
