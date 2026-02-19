@@ -72,6 +72,7 @@ impl fmt::Display for NotificationMetadata {
 pub struct Error {
     pub(crate) code: u16,
     pub(crate) message: Cow<'static, str>,
+    pub(crate) kind: Option<Cow<'static, str>>,
     pub(crate) stacktrace: String,
     pub(crate) related_command: Option<CommandMetadata>,
     pub(crate) next_retry_delay: Option<Duration>,
@@ -98,6 +99,7 @@ impl Error {
         Error {
             code: code.into(),
             message: message.into(),
+            kind: None,
             stacktrace: Default::default(),
             related_command: None,
             next_retry_delay: None,
@@ -110,6 +112,10 @@ impl Error {
 
     pub fn code(&self) -> u16 {
         self.code
+    }
+
+    pub fn kind(&self) -> Option<&str> {
+        self.kind.as_deref()
     }
 
     pub fn message(&self) -> &str {
@@ -127,6 +133,11 @@ impl Error {
 
     pub fn with_next_retry_delay_override(mut self, delay: Duration) -> Self {
         self.next_retry_delay = Some(delay);
+        self
+    }
+
+    pub(crate) fn with_kind(mut self, kind: &'static str) -> Self {
+        self.kind = Some(Cow::Borrowed(kind));
         self
     }
 

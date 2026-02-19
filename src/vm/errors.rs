@@ -81,6 +81,7 @@ impl Error {
         Error {
             code: code.0,
             message: Cow::Borrowed(message),
+            kind: None,
             stacktrace: String::new(),
             related_command: None,
             next_retry_delay: None,
@@ -354,11 +355,19 @@ impl UnsupportedFeatureForNegotiatedVersion {
 
 trait WithInvocationErrorCode {
     fn code(&self) -> InvocationErrorCode;
+    fn kind(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 impl<T: WithInvocationErrorCode + fmt::Display> From<T> for Error {
     fn from(value: T) -> Self {
-        Error::new(value.code().0, value.to_string())
+        let error = Error::new(value.code().0, value.to_string());
+        if let Some(kind) = value.kind() {
+            error.with_kind(kind)
+        } else {
+            error
+        }
     }
 }
 
@@ -385,7 +394,15 @@ impl_error_code!(UnavailableEntryError, PROTOCOL_VIOLATION);
 impl_error_code!(UnexpectedStateError, PROTOCOL_VIOLATION);
 impl_error_code!(ClosedError, CLOSED);
 impl_error_code!(CommandTypeMismatchError, JOURNAL_MISMATCH);
-impl_error_code!(UncompletedDoProgressDuringReplay, JOURNAL_MISMATCH);
+impl WithInvocationErrorCode for UncompletedDoProgressDuringReplay {
+    fn code(&self) -> InvocationErrorCode {
+        codes::JOURNAL_MISMATCH
+    }
+
+    fn kind(&self) -> Option<&'static str> {
+        Some("uncompleted_do_progress_during_replay")
+    }
+}
 impl<M: RestateMessage + CommandMessageHeaderDiff> WithInvocationErrorCode
     for CommandMismatchError<M>
 {
